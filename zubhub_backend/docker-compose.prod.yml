@@ -1,0 +1,124 @@
+version: "3.9"
+
+services:
+  web:
+    image: unstructuredstudio/zubhub-services_web:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        max_replicas_per_node: 1
+    environment:
+      - SECRET_NAME=zubhub_services_secrets
+    secrets:
+      - zubhub_services_secrets
+    depends_on:
+      - rabbitmq
+
+  media:
+    image: unstructuredstudio/zubhub-services_media:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role==worker"
+    volumes:
+      # We don't plan to ever use this in prod since we use external media storage services.
+      # This is just precautionary.
+      - media_data:/home/media/media_store
+    environment:
+      - SECRET_NAME=zubhub_services_secrets
+    secrets:
+      - zubhub_services_secrets
+    depends_on:
+      - web
+
+  rabbitmq:
+    image: bitnami/rabbitmq:3.11
+    env_file: .env
+    deploy:
+      replicas: 1
+      # update_config:
+      #   parallelism: 2
+      #   delay: 10s
+      restart_policy:
+        condition: on-failure
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role==manager"
+
+  reverse-proxy:
+    image: valian/docker-nginx-auto-ssl:1.0.0
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role==manager"
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ssl_data:/etc/resty-auto-ssl
+      - ./nginx/prod/server-proxy.conf:/usr/local/openresty/nginx/conf/server-proxy.conf
+    environment:
+      ALLOWED_DOMAINS: "(api|www.api|rabbitmq|prometheus|media).zubhub.unstructured.studio"
+      SITES:
+        "api.zubhub.unstructured.studio=web:8000;www.api.zubhub.unstructured.studio=web:8000;\
+        media.zubhub.unstructured.studio=media:8001;\
+        rabbitmq.zubhub.unstructured.studio=rabbitmq:15672"
+      # ;prometheus.zubhub.unstructured.studio=prometheus:9090"
+      FORCE_HTTPS: "true"
+    depends_on:
+      - web
+      - rabbitmq
+      - prometheus
+      - media
+      - celery_worker
+
+  celery_worker:
+    image: unstructuredstudio/zubhub-services_celery:latest
+    environment:
+      - SECRET_NAME=zubhub_services_secrets
+    secrets:
+      - zubhub_services_secrets
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role==manager"
+    depends_on:
+      - rabbitmq
+
+  # prometheus:
+  #   image: prom/prometheus
+  #   command:
+  #     - --config.file=/etc/prometheus/prometheus.yml
+  #   deploy:
+  #     replicas: 1
+  #     restart_policy:
+  #       condition: on-failure
+  #     placement:
+  #       max_replicas_per_node: 1
+  #       constraints:
+  #         - "node.role==manager"
+  #   volumes:
+  #     - ./compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+secrets:
+  zubhub_services_secrets:
+    file: .env
+
+volumes:
+  ssl_data:
+  media_data:

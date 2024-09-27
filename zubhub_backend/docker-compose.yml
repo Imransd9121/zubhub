@@ -1,0 +1,75 @@
+version: "3.3"
+
+services:
+  web:
+    container_name: web
+    env_file: .env
+    build:
+      context: .
+      dockerfile: ./compose/web/dev/Dockerfile
+    restart: on-failure
+    volumes:
+      - ./zubhub:/zubhub_backend/zubhub
+      - ./compose/web/requirements.txt:/zubhub_backend/requirements.txt:ro
+    ports:
+      - 8000:8000
+    depends_on:
+      - db
+      - rabbitmq
+
+  media:
+    container_name: media
+    env_file: .env
+    build:
+      context: .
+      dockerfile: ./compose/media/dev/Dockerfile
+    restart: on-failure
+    volumes:
+      - ./media:/home/media
+      - media_data:/home/media/media_store
+      - ./compose/media/requirements.txt:/home/requirements.txt:ro
+    ports:
+      - 8001:8001
+    depends_on:
+      - web
+
+  db:
+    container_name: db
+    env_file: .env
+    image: postgres:11
+    restart: on-failure
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - 5432:5432
+
+  rabbitmq:
+    container_name: rabbitmq
+    env_file: .env
+    image: bitnami/rabbitmq:3.11
+    restart: on-failure
+    ports:
+      - 5672:5672
+      - 15672:15672
+
+  celery_worker:
+    container_name: celery_worker
+    env_file: .env
+    build:
+      context: .
+      dockerfile: ./compose/celery/prod/Dockerfile
+    command: /celery/start-celeryworker
+    restart: on-failure
+    volumes:
+      - ./zubhub:/zubhub_backend/zubhub
+      - ./compose/celery/prod/start-celeryworker:/zubhub_backend/start-celeryworker:ro
+      - ./compose/celery/prod/requirements.txt:/zubhub_backend/requirements.txt:ro
+    depends_on:
+      - rabbitmq
+      - db
+
+volumes:
+  postgres_data:
+  media_data:

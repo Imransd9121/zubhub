@@ -1,0 +1,15 @@
+media_store/
+zubhub/media/
+# migrations/
+__pycache__/
+*.pyc
+staticfiles/
+site
+.env
+.docker/
+cadvisor.htpasswd
+.ssl-data
+celerybeat-schedule
+celerybeat.pid
+venv/
+.idea/
